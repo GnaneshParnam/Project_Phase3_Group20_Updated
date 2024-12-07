@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shark Incident Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        #map {
+            height: 600px;
+            width: 100%;
+        }
+        .controls {
+            display: flex;
+            align-items: center;
+            margin: 10px;
+        }
+        #sharkDropdown {
+            padding: 5px;
+            width: 200px;
+            margin-right: 15px;
+        }
+        .shark-legend {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.4); /* More transparent background */
+            border-radius: 5px;
+            padding: 8px;
+            font-size: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            max-width: 300px;
+            z-index: 1000; /* Make sure it appears above the map */
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-right: 10px;
+            margin-bottom: 5px;
+            min-width: 100px;
+        }
+        .color-box {
+            width: 15px;
+            height: 15px;
+            margin-right: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h2 style="text-align: center;">GeoGraphic Map Visualization Of Shark Incidents in Australia</h2>
+    <p style="text-align: center;"><strong>Overview:</strong>A Leaflet map is initialized to display shark incidents in Australia, with markers representing individual incidents at specific coordinates.</p>
+    <div class="controls">
+        <select id="sharkDropdown">
+            <option value="All Sharks">All Sharks</option>
+        </select>
+        <!-- Add the hyperlink beside the dropdown -->
+        <!--<a href="barchart2.html" target="_blank" style="margin-left: 15px;">View Bar Chart</a>-->
+    </div>
+    <div id="map"></div>
+    <div class="shark-legend" id="legendContainer"></div>
+
+    <script>
+        let markers = []; // Array to store all markers
+
+        // Pre-defined distinct color palette for sharks
+        const distinctColors = [
+            '#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0', 
+            '#f032e6', '#bcf60c', '#fabebe', '#008080', '#e6beff', '#9a6324', '#fffac8', 
+            '#800000', '#aaffc3', '#808000', '#ffd8b1', '#000075', '#808080', '#ffffff', 
+            '#000000'
+        ];
+        let colorIndex = 0;
+
+        // Initialize the Leaflet map
+        const map = L.map('map', {
+            center: [-25, 134], // Centered on Australia
+            zoom: 4,
+            minZoom: 2, // Set the minimum zoom level
+            maxBounds: [[-90, -180], [90, 180]], // Restrict the map to world bounds
+            maxBoundsViscosity: 1.0 // Makes the map bounce back when panning out of bounds
+        });
+
+        // Add a tile layer to the map (OpenStreetMap tiles)
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 18,
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        // Generate a color for each shark type using the distinct colors list
+        const sharkColors = {};
+
+        function getColorForShark(sharkName) {
+            if (!sharkColors[sharkName]) {
+                // Assign the next color in the list and increment the index
+                sharkColors[sharkName] = distinctColors[colorIndex % distinctColors.length];
+                colorIndex++;
+            }
+            return sharkColors[sharkName];
+        }
+
+        // Function to update the legend
+        function updateLegend() {
+            const legendContainer = document.getElementById('legendContainer');
+            legendContainer.innerHTML = ''; // Clear existing legend items
+
+            for (const sharkName in sharkColors) {
+                const legendItem = document.createElement('div');
+                legendItem.className = 'legend-item';
+
+                const colorBox = document.createElement('div');
+                colorBox.className = 'color-box';
+                colorBox.style.backgroundColor = sharkColors[sharkName];
+
+                const nameLabel = document.createElement('span');
+                nameLabel.textContent = sharkName;
+
+                legendItem.appendChild(colorBox);
+                legendItem.appendChild(nameLabel);
+                legendContainer.appendChild(legendItem);
+            }
+        }
+
+        // Use D3 to load the GeoJSON data and overlay it using Leaflet
+        d3.json("https://raw.githubusercontent.com/rowanhogan/australian-states/master/states.geojson").then(function(geoData) {
+            L.geoJSON(geoData, {
+                style: function () {
+                    return { color: "#333", fillColor: "#ccc", weight: 1 };
+                }
+            }).addTo(map);
+
+            // Load the shark incident data and overlay it using D3
+            d3.csv("SharkIncidents1.csv").then(function(data) {
+                const invalidRecords = []; // Array to store invalid records
+                const sharkNames = new Set(); // Set to store unique shark names
+
+                data.forEach(function(d) {
+                    // Parse latitude and longitude as numbers
+                    const lat = parseFloat(d.Latitude);
+                    const lng = parseFloat(d.Longitude);
+                    const location = d.Location || 'Unknown'; // Ensure location has a default value
+                    const sharkName = d["Shark.common.name"] || 'Unknown'; // Accessing the "Shark.common.name" field
+
+                    // Add shark name to the set if it is not 'Unknown'
+                    if (sharkName !== 'Unknown') {
+                        sharkNames.add(sharkName);
+                    }
+
+                    // Check if the latitude and longitude are valid numbers and within acceptable ranges
+                    if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                        // Add each shark incident as a circle marker with a specific color
+                        const marker = L.circleMarker([lat, lng], {
+                            radius: 3,
+                            fillColor: getColorForShark(sharkName),
+                            color: getColorForShark(sharkName),
+                            weight: 0.5,
+                            fillOpacity: 0.7
+                        }).addTo(map);
+
+                        // Add tooltip on hover
+                        marker.bindTooltip(`<strong>Location:</strong> ${location}<br>
+                                            <strong>Shark Name:</strong> ${sharkName}<br>
+                                            <strong>Coordinates:</strong> (${lat.toFixed(2)}, ${lng.toFixed(2)})`);
+
+                        // Add the marker to the markers array with its shark name
+                        markers.push({ marker: marker, sharkName: sharkName });
+                    } else {
+                        // Log the invalid record
+                        invalidRecords.push(d);
+                    }
+                });
+
+                // Convert the Set to an Array and sort the shark names alphabetically
+                const sortedSharkNames = Array.from(sharkNames).sort();
+
+                // Populate the dropdown with sorted shark names
+                const sharkDropdown = document.getElementById("sharkDropdown");
+                sortedSharkNames.forEach(function(name) {
+                    const option = document.createElement("option");
+                    option.value = name;
+                    option.text = name;
+                    sharkDropdown.appendChild(option);
+                });
+
+                // Update the legend with shark colors
+                updateLegend();
+
+                // Filter markers based on the selected shark name
+                sharkDropdown.addEventListener("change", function() {
+                    const selectedShark = sharkDropdown.value;
+                    markers.forEach(function(item) {
+                        if (selectedShark === "All Sharks" || item.sharkName === selectedShark) {
+                            item.marker.addTo(map); // Show the marker
+                        } else {
+                            map.removeLayer(item.marker); // Hide the marker
+                        }
+                    });
+                });
+
+                // Display invalid records in the console
+                if (invalidRecords.length > 0) {
+                    console.warn("The following records have invalid coordinates:", invalidRecords);
+                } else {
+                    console.log("All records have valid coordinates.");
+                }
+            }).catch(function(error) {
+                console.error("Error loading the CSV file: ", error);
+            });
+        }).catch(function(error) {
+            console.error("Error loading the GeoJSON data: ", error);
+        });
+    </script>
+</body>
+</html>
